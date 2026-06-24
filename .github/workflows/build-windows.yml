@@ -151,14 +151,31 @@ jobs:
         working-directory: fritzing-src
         run: |
           New-Item -ItemType Directory -Path "ngspice-42/include/ngspice" -Force
-          # Sparse-clone just the include subtree — avoids downloading the full ~50 MB source.
-          # The raw-file URL 404s because the tag or path may differ; git clone is more robust.
-          git clone --filter=blob:none --sparse --branch ngspice-42 --depth 1 `
-              https://github.com/ngspice/ngspice.git ngspice-src
+
+          # Probe available tags — the tag name varies (e.g. "ngspice-42", "42", etc.)
+          Write-Host "Listing ngspice tags..."
+          $remoteRefs = & git ls-remote --tags https://github.com/ngspice/ngspice.git 2>&1
+          $remoteRefs | Write-Host
+
+          $tag42 = $remoteRefs |
+              Where-Object { $_ -match "refs/tags/" -and $_ -notmatch "\^\{\}" } |
+              ForEach-Object { ($_ -replace "^[0-9a-f]+\s+refs/tags/", "").Trim() } |
+              Where-Object { $_ -match "(^|[^0-9])42$" } |
+              Select-Object -First 1
+
+          if ($tag42) {
+              Write-Host "Found tag: $tag42 — sparse-cloning src/include"
+              git clone --filter=blob:none --sparse --branch $tag42 --depth 1 `
+                  https://github.com/ngspice/ngspice.git ngspice-src
+          } else {
+              Write-Host "No ngspice-42 tag found — cloning default branch for headers"
+              git clone --filter=blob:none --sparse --depth 1 `
+                  https://github.com/ngspice/ngspice.git ngspice-src
+          }
           Push-Location ngspice-src
           git sparse-checkout set src/include
           Pop-Location
-          # Handle both possible paths across ngspice versions
+
           $h1 = "ngspice-src/src/include/ngspice/sharedspice.h"
           $h2 = "ngspice-src/src/include/sharedspice.h"
           if (Test-Path $h1) {
@@ -168,7 +185,7 @@ jobs:
           } else {
               Write-Host "Contents of ngspice-src/src/include:"
               Get-ChildItem -Recurse "ngspice-src/src/include" | Write-Host
-              throw "sharedspice.h not found at either expected path in ngspice-42 source"
+              throw "sharedspice.h not found at either expected path"
           }
           Remove-Item -Recurse -Force ngspice-src
           if (-not (Test-Path "ngspice-42/include/ngspice/sharedspice.h")) {
