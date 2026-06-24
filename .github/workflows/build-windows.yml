@@ -209,12 +209,7 @@ jobs:
             "-DCMAKE_POLICY_VERSION_MINIMUM=3.5",
             "-DCMAKE_INSTALL_PREFIX=$installPrefix",
             "-DQUAZIP_QT_MAJOR_VERSION=6",
-            # Pin zlib to vcpkg explicitly so CMake does not pick up Git for
-            # Windows' z.dll (which is on PATH and would produce a z.dll
-            # runtime dependency instead of the expected zlib1.dll).
-            "-DZLIB_ROOT=C:/vcpkg/installed/x64-windows",
-            "-DZLIB_LIBRARY=C:/vcpkg/installed/x64-windows/lib/zlib.lib",
-            "-DZLIB_INCLUDE_DIR=C:/vcpkg/installed/x64-windows/include"
+            "-DZLIB_ROOT=C:/vcpkg/installed/x64-windows"
           )
           & cmake @quazipCmakeArgs
           cmake --build quazip-src/build --config Release -- /m
@@ -324,8 +319,16 @@ jobs:
           Get-ChildItem -Path "fritzing-app\translations" -Filter "*.qm" |
               ForEach-Object { Copy-Item $_.FullName "$deployDir\translations\" }
 
-          # fritzing-parts: community parts library (app searches for this folder by name)
-          Copy-Item -Recurse -Force "fritzing-parts" "$deployDir\fritzing-parts"
+          # fritzing-parts: clone locally so the result is a valid git repository.
+          # Fritzing's libgit2 calls git_repository_open() on this folder to read
+          # the HEAD commit SHA — if that fails (empty SHA), fapplication.cpp line
+          # 909 returns false and ZERO parts load (including built-in Qt resources).
+          # Copy-Item -Recurse can produce a broken .git copy; git clone --local
+          # always produces a clean, openable repo.
+          git clone --local "fritzing-parts" "$deployDir\fritzing-parts"
+          $fzpCount = (Get-ChildItem "$deployDir\fritzing-parts" -Filter "*.fzp" -Recurse | Measure-Object).Count
+          Write-Host "fritzing-parts: $fzpCount .fzp files in deploy folder"
+          if ($fzpCount -eq 0) { throw "fritzing-parts clone produced no .fzp files" }
 
           Write-Host "=== Deploy folder top-level ==="
           Get-ChildItem $deployDir | Select-Object Name | Write-Host
