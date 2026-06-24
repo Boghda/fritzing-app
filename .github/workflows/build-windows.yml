@@ -138,9 +138,11 @@ jobs:
       - name: Download svgpp-1.3.1 (header-only library)
         working-directory: fritzing-src
         run: |
-          Invoke-WebRequest -Uri "https://github.com/svgpp/svgpp/archive/refs/tags/1.3.1.zip" -OutFile svgpp.zip
+          # svgpp tags use a "v" prefix: v1.3.1, not 1.3.1
+          Invoke-WebRequest -Uri "https://github.com/svgpp/svgpp/archive/refs/tags/v1.3.1.zip" -OutFile svgpp.zip
           Expand-Archive -Path svgpp.zip -DestinationPath .
           Remove-Item svgpp.zip
+          # GitHub strips the leading "v" when naming the extracted folder
           if (-not (Test-Path "svgpp-1.3.1/include/svgpp")) {
             throw "svgpp headers not found after extraction"
           }
