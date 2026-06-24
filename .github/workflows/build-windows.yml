@@ -226,19 +226,23 @@ jobs:
         working-directory: fritzing-src/fritzing-app
         run: nmake
 
-      - name: Deploy Qt DLLs and copy runtime dependencies
+      - name: Stage clean deploy folder with Qt DLLs and runtime dependencies
         working-directory: fritzing-src
         run: |
-          # Find Fritzing.exe
+          # Find Fritzing.exe (buried in release64 build tree)
           $exe = Get-ChildItem -Path release64 -Filter "Fritzing.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $exe) { throw "Fritzing.exe not found under release64" }
-          $deployDir = $exe.DirectoryName
-          Write-Host "Deploying from: $deployDir"
+          Write-Host "Found: $($exe.FullName)"
 
-          # Run windeployqt to gather all required Qt DLLs (PrintSupport, SvgWidgets, OpenGLWidgets, etc.)
-          & "$env:QT_ROOT_DIR\bin\windeployqt.exe" --release --no-translations --no-compiler-runtime "$($exe.FullName)"
+          # Create a clean deployment directory (no .obj files)
+          $deployDir = (New-Item -ItemType Directory -Path "Fritzing-deploy" -Force).FullName
+          Copy-Item $exe.FullName $deployDir
 
-          # Copy QuaZip DLL (not handled by windeployqt)
+          # Run windeployqt to gather all Qt DLLs into the clean folder
+          # (handles PrintSupport, SvgWidgets, OpenGLWidgets, Svg, Network, etc.)
+          & "$env:QT_ROOT_DIR\bin\windeployqt.exe" --release --no-translations --no-compiler-runtime "$deployDir\Fritzing.exe"
+
+          # Copy QuaZip DLL (third-party, not known to windeployqt)
           $qzVer = "${{ env.QUAZIP_VERSION }}"
           $qtVer = "${{ env.QT_VERSION }}"
           $quazipBinDir = "quazip-$qtVer-${qzVer}intuisphere\bin"
@@ -260,19 +264,12 @@ jobs:
             Write-Host "WARNING: zlib1.dll not found at $zlibDll"
           }
 
-          Write-Host "Contents of deploy directory:"
-          Get-ChildItem $deployDir | Select-Object Name | Write-Host
-
-      - name: Locate build output
-        working-directory: fritzing-src
-        run: |
-          Write-Host "Looking for Fritzing.exe under release64..."
-          Get-ChildItem -Path release64 -Filter "Fritzing.exe" -Recurse -ErrorAction SilentlyContinue
+          Write-Host "=== Deploy folder contents ==="
+          Get-ChildItem $deployDir -Recurse | Select-Object FullName | Write-Host
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: fritzing-windows-build-${{ github.run_number }}
-          path: |
-            fritzing-src/release64/**
-          if-no-files-found: warn
+          path: fritzing-src/Fritzing-deploy/
+          if-no-files-found: error
