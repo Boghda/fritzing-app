@@ -63,7 +63,7 @@ jobs:
           arch: win64_msvc2019_64
           host: windows
           target: desktop
-          modules: "qt5compat"
+          modules: "qt5compat qtserialport qtsvg"
           dir: ${{ github.workspace }}\qt
 
       - name: Set up MSVC dev environment
