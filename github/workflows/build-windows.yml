@@ -1,0 +1,149 @@
+name: Build Fritzing (Windows)
+
+# Builds Fritzing for Windows x64 on GitHub-hosted runners, matching the
+# exact dependency pins read directly out of this repo's qmake .pri files:
+#
+#   Qt:      6.5.3 - 6.5.10   (phoenix.pro, QT_LEAST / QT_MOST)
+#   boost:   1.85.0, headers only, sibling folder "boost_1_85_0"
+#                              (pri/boostdetect.pri)
+#   libgit2: 0.28, static, sibling folder "libgit2" with
+#            libgit2/include/git2.h and libgit2/build64/Release/git2.lib
+#                              (pri/libgit2detect.pri)
+#   quazip:  1.4, sibling folder "quazip-6.5.3-1.4intuisphere"
+#            *** NOTE: that "intuisphere" suffix is not a typo on my part —
+#            it is literally what pri/quazipdetect.pri concatenates on the
+#            "develop" branch as of this writing. It looks like an
+#            accidental leftover from a find/replace in their repo. If this
+#            step fails with "quazip could not be found", open
+#            pri/quazipdetect.pri in your fork and check whether that
+#            line has been fixed upstream since — the folder name this
+#            workflow creates must match it exactly. ***
+#
+# Folder layout this workflow builds (all siblings, matching the .pri files):
+#   D:\fritzing-src\
+#     ├── fritzing-app\            (this repo)
+#     ├── fritzing-parts\
+#     ├── boost_1_85_0\
+#     ├── libgit2\
+#     └── quazip-6.5.3-1.4intuisphere\
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ develop, main, master ]
+
+env:
+  QT_VERSION: "6.5.3"
+  BOOST_VERSION: "1.85.0"
+  LIBGIT2_VERSION: "0.28.5"
+  QUAZIP_VERSION: "1.4"
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout fritzing-app into fritzing-src/fritzing-app
+        uses: actions/checkout@v4
+        with:
+          path: fritzing-src/fritzing-app
+
+      - name: Checkout fritzing-parts (sibling repo)
+        uses: actions/checkout@v4
+        with:
+          repository: fritzing/fritzing-parts
+          path: fritzing-src/fritzing-parts
+
+      - name: Install Qt ${{ env.QT_VERSION }} (MSVC 2019 64-bit)
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          arch: win64_msvc2019_64
+          host: windows
+          target: desktop
+          dir: ${{ github.workspace }}\qt
+
+      - name: Set up MSVC dev environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Download and stage Boost headers (sibling folder boost_1_85_0)
+        working-directory: fritzing-src
+        run: |
+          $ver = "${{ env.BOOST_VERSION }}"
+          $verUnderscore = $ver -replace '\.', '_'
+          $folderName = "boost_$verUnderscore"
+          $url = "https://archives.boost.io/release/$ver/source/boost_$verUnderscore.zip"
+          Write-Host "Downloading $url"
+          Invoke-WebRequest -Uri $url -OutFile boost.zip
+          Expand-Archive -Path boost.zip -DestinationPath .
+          Write-Host "Staged at $folderName"
+          if (-not (Test-Path "$folderName\boost\version.hpp")) {
+            throw "Boost headers not found after extraction - check folder name/version"
+          }
+
+      - name: Download libgit2 ${{ env.LIBGIT2_VERSION }} source
+        working-directory: fritzing-src
+        run: |
+          $ver = "${{ env.LIBGIT2_VERSION }}"
+          $url = "https://github.com/libgit2/libgit2/archive/refs/tags/v$ver.zip"
+          Write-Host "Downloading $url"
+          Invoke-WebRequest -Uri $url -OutFile libgit2.zip
+          Expand-Archive -Path libgit2.zip -DestinationPath .
+          Rename-Item -Path "libgit2-$ver" -NewName "libgit2"
+
+      - name: Build libgit2 as a static lib (build64/Release/git2.lib)
+        working-directory: fritzing-src/libgit2
+        run: |
+          cmake -S . -B build64 -A x64 `
+            -DBUILD_SHARED_LIBS=OFF `
+            -DBUILD_CLI=OFF `
+            -DBUILD_TESTS=OFF `
+            -DCMAKE_BUILD_TYPE=Release
+          cmake --build build64 --config Release -- /m
+          if (-not (Test-Path "build64\Release\git2.lib")) {
+            throw "git2.lib was not produced - check the cmake/build output above"
+          }
+
+      - name: Download and stage quazip (header+lib install layout)
+        working-directory: fritzing-src
+        run: |
+          $qzVer = "${{ env.QUAZIP_VERSION }}"
+          $qtVer = "${{ env.QT_VERSION }}"
+          # *** see the long note at the top of this file about this folder name ***
+          $folderName = "quazip-$qtVer-${qzVer}intuisphere"
+          git clone --branch v$qzVer --depth 1 https://github.com/stachenov/quazip.git quazip-src
+          cmake -S quazip-src -B quazip-src/build -A x64 `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_INSTALL_PREFIX="$pwd\$folderName" `
+            -DQUAZIP_QT_MAJOR_VERSION=6
+          cmake --build quazip-src/build --config Release -- /m
+          cmake --install quazip-src/build --config Release
+
+      - name: Run qmake
+        working-directory: fritzing-src/fritzing-app
+        run: |
+          $boostVer = "${{ env.BOOST_VERSION }}" -replace '\.', '_'
+          $boostRoot = (Resolve-Path "..\boost_$boostVer").Path
+          & "$env:Qt6_DIR\bin\qmake.exe" CONFIG+=release DEFINES+=QUAZIP_LIB "boost_root=$boostRoot"
+
+      - name: Build with nmake
+        working-directory: fritzing-src/fritzing-app
+        run: nmake
+
+      - name: Locate build output
+        working-directory: fritzing-src
+        run: |
+          Write-Host "Looking for Fritzing.exe under release64..."
+          Get-ChildItem -Path release64 -Filter "Fritzing.exe" -Recurse -ErrorAction SilentlyContinue
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fritzing-windows-build-${{ github.run_number }}
+          path: |
+            fritzing-src/release64/**
+          if-no-files-found: warn
