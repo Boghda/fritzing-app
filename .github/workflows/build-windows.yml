@@ -98,10 +98,14 @@ jobs:
       - name: Build libgit2 as a static lib (build64/Release/git2.lib)
         working-directory: fritzing-src/libgit2
         run: |
+          # libgit2 0.28's CMakeLists.txt pins a cmake_minimum_required() far
+          # older than modern CMake supports. CMAKE_POLICY_VERSION_MINIMUM
+          # tells CMake to configure it anyway using >=3.5 policy behavior.
           cmake -S . -B build64 -A x64 `
             -DBUILD_SHARED_LIBS=OFF `
             -DBUILD_CLI=OFF `
             -DBUILD_TESTS=OFF `
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 `
             -DCMAKE_BUILD_TYPE=Release
           cmake --build build64 --config Release -- /m
           if (-not (Test-Path "build64\Release\git2.lib")) {
@@ -118,6 +122,7 @@ jobs:
           git clone --branch v$qzVer --depth 1 https://github.com/stachenov/quazip.git quazip-src
           cmake -S quazip-src -B quazip-src/build -A x64 `
             -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 `
             -DCMAKE_INSTALL_PREFIX="$pwd\$folderName" `
             -DQUAZIP_QT_MAJOR_VERSION=6
           cmake --build quazip-src/build --config Release -- /m
