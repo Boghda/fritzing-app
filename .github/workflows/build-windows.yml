@@ -152,7 +152,7 @@ jobs:
         run: |
           $boostVer = "${{ env.BOOST_VERSION }}" -replace '\.', '_'
           $boostRoot = (Resolve-Path "..\boost_$boostVer").Path
-          & "$env:Qt6_DIR\bin\qmake.exe" CONFIG+=release DEFINES+=QUAZIP_LIB "boost_root=$boostRoot"
+          & "$env:QT_ROOT_DIR\bin\qmake.exe" CONFIG+=release DEFINES+=QUAZIP_LIB "boost_root=$boostRoot"
 
       - name: Build with nmake
         working-directory: fritzing-src/fritzing-app
