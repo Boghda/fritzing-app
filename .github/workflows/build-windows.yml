@@ -209,7 +209,12 @@ jobs:
             "-DCMAKE_POLICY_VERSION_MINIMUM=3.5",
             "-DCMAKE_INSTALL_PREFIX=$installPrefix",
             "-DQUAZIP_QT_MAJOR_VERSION=6",
-            "-DZLIB_ROOT=C:/vcpkg/installed/x64-windows"
+            # Pin zlib to vcpkg explicitly so CMake does not pick up Git for
+            # Windows' z.dll (which is on PATH and would produce a z.dll
+            # runtime dependency instead of the expected zlib1.dll).
+            "-DZLIB_ROOT=C:/vcpkg/installed/x64-windows",
+            "-DZLIB_LIBRARY=C:/vcpkg/installed/x64-windows/lib/zlib.lib",
+            "-DZLIB_INCLUDE_DIR=C:/vcpkg/installed/x64-windows/include"
           )
           & cmake @quazipCmakeArgs
           cmake --build quazip-src/build --config Release -- /m
@@ -275,12 +280,23 @@ jobs:
           } else {
             Write-Host "WARNING: zlib1.dll not found at $zlibDll"
           }
-          $qtZDll = "$env:QT_ROOT_DIR\bin\z.dll"
-          if (Test-Path $qtZDll) {
-            Write-Host "Copying z.dll (Qt bundled zlib)"
-            Copy-Item $qtZDll $deployDir
-          } else {
-            Write-Host "z.dll not found in Qt bin (may not be needed)"
+          # z.dll: search Qt bin first, then Git for Windows (which also ships it)
+          $zdllCandidates = @(
+            "$env:QT_ROOT_DIR\bin\z.dll",
+            "C:\Program Files\Git\mingw64\bin\z.dll",
+            "C:\Program Files\Git\usr\bin\z.dll"
+          )
+          $foundZDll = $false
+          foreach ($candidate in $zdllCandidates) {
+            if (Test-Path $candidate) {
+              Write-Host "Copying z.dll from $candidate"
+              Copy-Item $candidate $deployDir
+              $foundZDll = $true
+              break
+            }
+          }
+          if (-not $foundZDll) {
+            Write-Host "WARNING: z.dll not found in any known location"
           }
 
           # Copy Qt DLLs that windeployqt sometimes misses:
