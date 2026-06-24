@@ -101,12 +101,20 @@ jobs:
           # libgit2 0.28's CMakeLists.txt pins a cmake_minimum_required() far
           # older than modern CMake supports. CMAKE_POLICY_VERSION_MINIMUM
           # tells CMake to configure it anyway using >=3.5 policy behavior.
-          cmake -S . -B build64 -A x64 `
-            -DBUILD_SHARED_LIBS=OFF `
-            -DBUILD_CLI=OFF `
-            -DBUILD_TESTS=OFF `
-            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 `
-            -DCMAKE_BUILD_TYPE=Release
+          # Using an array + call operator here instead of backtick line
+          # continuations, since backticks before a bare numeric arg like
+          # 3.5 can get mis-tokenized by PowerShell into "3" and ".5".
+          $cmakeArgs = @(
+            "-S", ".",
+            "-B", "build64",
+            "-A", "x64",
+            "-DBUILD_SHARED_LIBS=OFF",
+            "-DBUILD_CLI=OFF",
+            "-DBUILD_TESTS=OFF",
+            "-DCMAKE_POLICY_VERSION_MINIMUM=3.5",
+            "-DCMAKE_BUILD_TYPE=Release"
+          )
+          & cmake @cmakeArgs
           cmake --build build64 --config Release -- /m
           if (-not (Test-Path "build64\Release\git2.lib")) {
             throw "git2.lib was not produced - check the cmake/build output above"
@@ -120,11 +128,17 @@ jobs:
           # *** see the long note at the top of this file about this folder name ***
           $folderName = "quazip-$qtVer-${qzVer}intuisphere"
           git clone --branch v$qzVer --depth 1 https://github.com/stachenov/quazip.git quazip-src
-          cmake -S quazip-src -B quazip-src/build -A x64 `
-            -DCMAKE_BUILD_TYPE=Release `
-            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 `
-            -DCMAKE_INSTALL_PREFIX="$pwd\$folderName" `
-            -DQUAZIP_QT_MAJOR_VERSION=6
+          $installPrefix = Join-Path (Get-Location) $folderName
+          $quazipCmakeArgs = @(
+            "-S", "quazip-src",
+            "-B", "quazip-src/build",
+            "-A", "x64",
+            "-DCMAKE_BUILD_TYPE=Release",
+            "-DCMAKE_POLICY_VERSION_MINIMUM=3.5",
+            "-DCMAKE_INSTALL_PREFIX=$installPrefix",
+            "-DQUAZIP_QT_MAJOR_VERSION=6"
+          )
+          & cmake @quazipCmakeArgs
           cmake --build quazip-src/build --config Release -- /m
           cmake --install quazip-src/build --config Release
 
