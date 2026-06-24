@@ -226,6 +226,16 @@ jobs:
         working-directory: fritzing-src/fritzing-app
         run: nmake
 
+      - name: Compile Fritzing translations (.ts → .qm)
+        working-directory: fritzing-src/fritzing-app
+        run: |
+          $tsFiles = Get-ChildItem -Path translations -Filter "*.ts" | Select-Object -ExpandProperty FullName
+          if ($tsFiles.Count -eq 0) { Write-Host "No .ts files found"; exit 0 }
+          foreach ($ts in $tsFiles) {
+            & "$env:QT_ROOT_DIR\bin\lrelease.exe" $ts
+          }
+          Write-Host "Compiled $($tsFiles.Count) translation files"
+
       - name: Stage clean deploy folder with Qt DLLs and runtime dependencies
         working-directory: fritzing-src
         run: |
@@ -264,8 +274,24 @@ jobs:
             Write-Host "WARNING: zlib1.dll not found at $zlibDll"
           }
 
-          Write-Host "=== Deploy folder contents ==="
-          Get-ChildItem $deployDir -Recurse | Select-Object FullName | Write-Host
+          # Copy Fritzing runtime data folders
+          # resources/: bins, fonts, images, parts (FZP + SVG), templates, etc.
+          # help/:        HTML help pages
+          # sketches/:    example sketch files
+          Copy-Item -Recurse -Force "fritzing-app\resources" "$deployDir\resources"
+          Copy-Item -Recurse -Force "fritzing-app\help"      "$deployDir\help"
+          Copy-Item -Recurse -Force "fritzing-app\sketches"  "$deployDir\sketches"
+
+          # Compiled translations (.qm files produced by lrelease above)
+          New-Item -ItemType Directory -Path "$deployDir\translations" -Force | Out-Null
+          Get-ChildItem -Path "fritzing-app\translations" -Filter "*.qm" |
+              ForEach-Object { Copy-Item $_.FullName "$deployDir\translations\" }
+
+          # fritzing-parts: community parts library (app searches for this folder by name)
+          Copy-Item -Recurse -Force "fritzing-parts" "$deployDir\fritzing-parts"
+
+          Write-Host "=== Deploy folder top-level ==="
+          Get-ChildItem $deployDir | Select-Object Name | Write-Host
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
