@@ -57,6 +57,13 @@ win32 {
 
 	INCLUDEPATH += $$LIBGIT2INCLUDE
     LIBS += -L$$LIBGIT2LIB -lgit2
+    # Static libgit2 0.28 on Windows needs these system libraries explicitly:
+    # - Advapi32: GetTokenInformation, OpenProcessToken, registry APIs, SID helpers
+    # - Winhttp:  WinHttpOpen/Connect/SendRequest and friends
+    # - Ole32:    CoInitializeEx/CoUninitialize/CoCreateInstance
+    # - Crypt32:  CertFreeCertificateContext
+    # - Rpcrt4:   UuidCreate
+    LIBS += -lAdvapi32 -lWinhttp -lOle32 -lCrypt32 -lRpcrt4
 }
 
 unix {
