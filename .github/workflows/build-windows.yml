@@ -121,6 +121,9 @@ jobs:
             throw "git2.lib was not produced - check the cmake/build output above"
           }
 
+      - name: Install zlib via vcpkg (required by QuaZip)
+        run: vcpkg install zlib:x64-windows
+
       - name: Download and stage quazip (header+lib install layout)
         working-directory: fritzing-src
         run: |
@@ -137,7 +140,8 @@ jobs:
             "-DCMAKE_BUILD_TYPE=Release",
             "-DCMAKE_POLICY_VERSION_MINIMUM=3.5",
             "-DCMAKE_INSTALL_PREFIX=$installPrefix",
-            "-DQUAZIP_QT_MAJOR_VERSION=6"
+            "-DQUAZIP_QT_MAJOR_VERSION=6",
+            "-DZLIB_ROOT=C:/vcpkg/installed/x64-windows"
           )
           & cmake @quazipCmakeArgs
           cmake --build quazip-src/build --config Release -- /m
