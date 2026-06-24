@@ -151,9 +151,28 @@ jobs:
         working-directory: fritzing-src
         run: |
           New-Item -ItemType Directory -Path "ngspice-42/include/ngspice" -Force
-          Invoke-WebRequest -Uri "https://raw.githubusercontent.com/ngspice/ngspice/ngspice-42/src/include/ngspice/sharedspice.h" -OutFile "ngspice-42/include/ngspice/sharedspice.h"
+          # Sparse-clone just the include subtree — avoids downloading the full ~50 MB source.
+          # The raw-file URL 404s because the tag or path may differ; git clone is more robust.
+          git clone --filter=blob:none --sparse --branch ngspice-42 --depth 1 `
+              https://github.com/ngspice/ngspice.git ngspice-src
+          Push-Location ngspice-src
+          git sparse-checkout set src/include
+          Pop-Location
+          # Handle both possible paths across ngspice versions
+          $h1 = "ngspice-src/src/include/ngspice/sharedspice.h"
+          $h2 = "ngspice-src/src/include/sharedspice.h"
+          if (Test-Path $h1) {
+              Copy-Item $h1 "ngspice-42/include/ngspice/sharedspice.h"
+          } elseif (Test-Path $h2) {
+              Copy-Item $h2 "ngspice-42/include/ngspice/sharedspice.h"
+          } else {
+              Write-Host "Contents of ngspice-src/src/include:"
+              Get-ChildItem -Recurse "ngspice-src/src/include" | Write-Host
+              throw "sharedspice.h not found at either expected path in ngspice-42 source"
+          }
+          Remove-Item -Recurse -Force ngspice-src
           if (-not (Test-Path "ngspice-42/include/ngspice/sharedspice.h")) {
-            throw "sharedspice.h was not downloaded"
+              throw "sharedspice.h was not staged correctly"
           }
 
       - name: Download and stage quazip (header+lib install layout)
